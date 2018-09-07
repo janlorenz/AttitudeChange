@@ -2,23 +2,31 @@
 title: "Attitude Change, Figures"
 author: "Jan Lorenz"
 date: "August 21, 2018"
-output: 
-  pdf_document: 
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
     latex_engine: xelatex
-editor_options: 
+editor_options:
   chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-## R Markdown
-
-```{r}
+library(knitr)
 library(tidyverse)
 library(gridExtra)
+library(magick)
+knitr::opts_chunk$set(echo = FALSE)
+# Helper functions
+crop <- function(im, left = 0, top = 0, right = 0, bottom = 0) {
+  d <- dim(im[[1]]); w <- d[2]; h <- d[3]
+  image_crop(im, glue::glue("{w-left-right}x{h-top-bottom}+{left}+{top}"))
+}
+```
 
+## Microdynamics with different theta
+
+```{r}
 ContagionVsInfoint <- function(a = -0.5, m = 1, hjust = 0, end = c(0,0,0), 
 	labels = FALSE, equations = FALSE, shift = 0) {
   if (length(hjust) == 1) {hjust = rep(hjust,3)}
@@ -61,75 +69,83 @@ G <- gridExtra::grid.arrange(grobs = list(
 	),
 	ncol = 2, layout_matrix = cbind(1:4, 5:8)
 )
-ggsave(filename = "FigContagionVsInfoint", plot=G, device = "png")
+# ggsave(filename = "FigContagionVsInfoint", plot=G, device = "png")
 ```
+
+## Examples
+
+```{r Examples}
+crop_full <- function(im) crop(im, left=410, top=165, right=430, bottom=425) 
+crop_histogram <- function(im) crop(im, left=1149, top=287, right=433, bottom=426)
+image_read("figures_netlogo/1-A_interface.png") %>% crop_full()
+image_read("figures_netlogo/1-B_interface.png") %>% crop_full()
+image_read("figures_netlogo/1-C_interface.png") %>% crop_full()
+
+image_read(paste0("figures_netlogo/1-A_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/1-B_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/1-C_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/2-A_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/2-B_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/2-C_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/3-A_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/3-B_interface.png")) %>% crop_histogram()
+image_read(paste0("figures_netlogo/3-C_interface.png")) %>% crop_histogram()
+```
+
 
 
 ## NetLogo BehaviorSpace Analysis
 
-```{r}
-sd_sample <- function(x) sqrt(sd(x)^2*(length(x)-1)/(length(x)))
-fragmentation <- function(S, bw = 0.1, dx = 0.01, from = -3.5, to = 3.5) {
-	d <- density(S, bw = bw, from = from, to = to, n = (to-from)/dx + 1)
-	Y <- diff(d$y)/dx
-	sum(abs(Y)) * dx * sd_sample(S)
-}
-
+```{r AlphaEtaTheta_BiasDiversity}
 d <- read_csv(file = "data/attitude_change delta_p2-table.csv",	skip = 6)
-# A
-d %>% filter(eta == 0, alpha %in% c(0.1, 0.2, 0.3, 0.4, 0.5)) %>%
-	rename(Bias=cum_biasmean, `Standard deviation`=cum_sd) %>% 
-	gather(key="measure", value="value", Bias, `Standard deviation`) %>% 
+g1 <- d %>% filter(eta == 0, alpha %in% c(0.1, 0.2, 0.3, 0.4, 0.5)) %>%
+	rename(Bias=cum_biasmean, Diversity=cum_sd) %>% 
+	gather(key="measure", value="value", Bias, Diversity) %>% 
 	ggplot(aes(x = p, y = value/3.5, size =  factor(alpha), color = factor(alpha))) + 
 	geom_line() + geom_point(size = 0.3) +
 	facet_grid(measure ~ .) + theme_bw() +
 	scale_color_manual(values=c("red","black","green","blue","violet")) +
 	scale_size_manual(values=0.5*c(1,3,1,1,1)) +
 	labs(x="θ (idiosyncrasy prob.)", y="", 
-		caption="With affective contagion (η = 0)") +
-	guides(color=guide_legend(title="α (strength)"), size="none")
-# B
-d %>% filter(p  %in% c(0.1,0.05,0.01, 0.15), alpha == 0.2) %>% 
-	rename(Bias=cum_biasmean, `Standard deviation`=cum_sd) %>% 
-	gather(key="measure", value="value", Bias, `Standard deviation`) %>% 
-	ggplot(aes(x = eta, y = value/3.5, color = factor(p)))	+ 
+		title="Increase idiosyncrasy: \n Transition to unbiased diversity",
+		caption="always η = 0 (affective contagion) ") +
+	guides(color=guide_legend(title="α (strength)", title.position = "top"), 
+		size="none") + 
+	theme(legend.position = "bottom")
+g2 <- d %>% filter(p  %in% c(0.1,0.05,0.01, 0.15, 0.2), alpha == 0.2) %>% 
+	rename(Bias=cum_biasmean, Diversity=cum_sd) %>% 
+	gather(key="measure", value="value", Bias, Diversity) %>% 
+	ggplot(aes(x = eta, y = value/3.5, size = factor(p), color = factor(p)))	+ 
 	geom_line() + geom_point(size = 0.3) + 
 	facet_grid(measure ~ .) + theme_bw() + 
-	labs(x="η (degree of integration)", y="Bias", 
-		caption="Fixed stength: α = 0.2") +
-	guides(color=guide_legend(title="θ (idiosyncrasy prob.)"))
-
-
-
-d %>% filter(p == 0.1, alpha %in% c(0.1,0.2,0.5)) %>% 
-	ggplot(aes(x = eta, y = cum_biasmean/3.5, color = factor(alpha)))	+ 
-	geom_line() + geom_point(size = 0) + theme_bw() +
-	labs(x="η (degree of integration)", y="Bias", 
-		caption="Fixed idiosyncrasy probablity: θ = 0.1")
-
-
-
-
-d %>% filter(p %in% c(0,0.01,0.05,0.1), alpha == 0.2) %>% 
-	ggplot(aes(x = eta, y = cum_biasmean/3.5, color = factor(p)))	+ 
-	geom_line() + geom_point()
-d %>% filter(p == 0.01, eta >= 0.75) %>% 
-	ggplot(aes(x = eta, y = cum_biasmean/3.5, color = factor(alpha)))	+ 
-	geom_line() + geom_point()
-d %>% filter(eta == 0) %>% 
-	ggplot(aes(x = p, y = cum_biasmean/3.5, color = factor(alpha)))	+ 
-	geom_line() + geom_point()
-d %>% filter(eta == 0.5) %>% 
-	ggplot(aes(x = p, y = cum_biasmean/3.5, color = factor(alpha)))	+ 
-	geom_line() + geom_point()
-d %>% filter(eta %in% c(0,0.5,0.75,1), alpha == 0.2) %>% 
-	ggplot(aes(x = p, y = cum_biasmean/3.5, color = factor(eta)))	+ 
-	geom_line() + geom_point()
-d %>% filter(eta == 0.75) %>% 
-	ggplot(aes(x = alpha, y = cum_biasmean/3.5, color = factor(p)))	+ 
-	geom_line() + geom_point()
-
-
+	scale_color_manual(values=c("black","red","green","blue","violet")) +
+	scale_size_manual(values=0.5*c(3,1,1,1,1)) +
+	labs(x="η (degree of integration)", y="", 
+		title="Increase degree of integration: \n Tipping to central consensus",
+		caption="always strength α = 0.2") +
+	guides(color=guide_legend(title="θ (idiosyncrasy prob.)", title.position = "top"),
+		size="none") + 
+	theme(legend.position = "bottom")
+gridExtra::grid.arrange(g1,g2, nrow=1)
 ```
+
+```{r}
+d %>% filter(alpha  %in% c(0.1,0.2,0.3,0.4,0.5), p == 0.1) %>% 
+	rename(Bias=cum_biasmean, Diversity=cum_sd) %>% 
+	gather(key="measure", value="value", Bias, Diversity) %>% 
+	ggplot(aes(x = eta, y = value/3.5, size = factor(alpha), color = factor(alpha)))	+ 
+	geom_line() + geom_point(size = 0.3) + 
+	facet_grid(measure ~ .) + theme_bw() + 
+	scale_color_manual(values=c("red","black","green","blue","violet")) +
+	scale_size_manual(values=0.5*c(1,3,1,1,1)) +
+	labs(x="η (degree of integration)", y="", 
+		title="Increase degree of integration: \n Tipping to central consensus",
+		caption="always strength θ = 0.1") +
+	guides(color=guide_legend(title="α (strength)", title.position = "top"),
+		size="none") + 
+	theme(legend.position = "bottom")
+```
+
+
 
 

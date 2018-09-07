@@ -1,12 +1,12 @@
 extensions [r]
 
 turtles-own [opinion group initial_opinion opinion-list focus?]
-globals [draw? cum_fragmentation cum_sd cum_biasmean cum_extremity cum_extremists]
+globals [draw? cum_fragmentation cum_sd cum_biasmean cum_extremity cum_extremists file_open?]
 
 ;; BUTTON PROCEDURES
 
 to setup
-  r:eval "source('/home/janlo/Documents/od/SocPsy/fragmentation.R')"
+  r:eval "source('/home/janlo/Documents/od/AttitudeChange/fragmentation.R')"
   clear-all
   ask patches [set pcolor white]
   create-turtles N
@@ -68,16 +68,13 @@ end
 
 to update_opinion
   ifelse (random-float 1 < theta and theta_as != "weight on initial attitude") [
-    if (theta_as = "probability for new random") [set opinion new_opinion]
-    if (theta_as = "probability for initial attitude") [set opinion initial_opinion]
+    if (theta_as = "idiosyncrasy probability") [set opinion new_opinion]
+    if (theta_as = "back to initial") [set opinion initial_opinion]
   ][
     let other_turtle one-of turtles
     let source_credibility ifelse-value (group = [group] of other_turtle) [1] [intergroup_credibility]
-    ifelse (theta_as = "weight on initial attitude") [
-      set opinion (1 - theta) * (opinion + opinion_change opinion source_credibility [opinion] of other_turtle) + theta * initial_opinion
-    ][
-      set opinion opinion + opinion_change opinion source_credibility [opinion] of other_turtle
-    ]
+    let weight ifelse-value (theta_as = "weight on initial attitude") [theta] [0]
+    set opinion (1 - weight) * (opinion + opinion_change opinion source_credibility [opinion] of other_turtle) + weight * initial_opinion
    ]
 end
 
@@ -139,9 +136,8 @@ to-report opinion_change [a s me]
   let core me - eta * a
   let discrepancy abs (me - a)
   let polarity_factor compute_polarity a
-  let motcog ifelse-value (motivated_cognition != "no") [motivated_cognition_factor discrepancy lambda k] [1]
-  let boomerang ifelse-value (motivated_cognition = "with acceptance latitude and boomerang") [(lambda ^ k - discrepancy ^ k) / (lambda ^ k + discrepancy ^ k)] [1]
-  report max list (0 - M - a) (min list (M - a) (alpha * s * core * polarity_factor * motcog * boomerang))
+  let motcog ifelse-value (motivated_cognition) [motivated_cognition_factor discrepancy lambda k] [1]
+  report max list (0 - M - a) (min list (M - a) (alpha * s * core * polarity_factor * motcog ))
 end
 
 to-report motivated_cognition_factor [d l kk]
@@ -188,30 +184,65 @@ to set_baseline
   set alpha 0.2
   set theta 0.01
   set M 3.5
-  set motivated_cognition "no"
+  set motivated_cognition false
   set lambda 0.5
   set k 2
   set polarity false
   set b 2
   set intergroup_credibility 1
-  set theta_as "probability for new random"
+  set theta_as "idiosyncrasy probability"
   set initial_groupspread 0
+  set iterations_per_tick 1
 end
 
 to scenario [name]
   set_baseline
+  if name = "1-B" [ set theta 0.17 ]
+  if name = "1-C" [ set eta 1 ]
+  if name = "2-A" [ set motivated_cognition true ]
+  if name = "2-B" [ set eta 0.5 set motivated_cognition true set lambda 0.25 ]
+  if name = "2-C" [ set eta 1 set initial_groupspread 3 set intergroup_credibility 0.1 ]
+  if name = "3-A" [ set eta 0.5 set motivated_cognition true set lambda 1.8 set k 10 ]
+  if name = "3-B" [ set eta 0.9 set motivated_cognition true set k 10 ]
+  if name = "3-C" [ set eta 1 set motivated_cognition true set k 10 ]
   setup
   if run_and_export_figs [
     run_until_world_full
-    export-interface (word "netlogofigs/" name "_interface.png")
+    set visualization "Heatmap timeline"
+    draw_trajectories
+    export-interface (word "figures_netlogo/" name "_interface_heatmap.png")
+    set visualization "Agents' trajectories"
+    draw_trajectories
+    export-interface (word "figures_netlogo/" name "_interface.png")
+    if (file_open? = true) [
+      file-print (word name "," alpha "," eta "," theta "," lambda "," (ifelse-value motivated_cognition [k] [""]) "," (ifelse-value polarity [b] [""]) ","
+      (cum_biasmean / M) "," (cum_sd / M) "," (cum_extremity / M) "," (cum_fragmentation / M / 4))
+    ]
   ]
+end
+
+to export_all_scenarios
+  file-open (word "figures_netlogo/outputmeasures_" date-and-time)
+  set file_open? true
+  set run_and_export_figs true
+  scenario "1-A"
+  scenario "1-B"
+  scenario "1-C"
+  scenario "2-A"
+  scenario "2-B"
+  scenario "2-C"
+  scenario "3-A"
+  scenario "3-B"
+  scenario "3-C"
+  file-close
+  set file_open? false
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-514
-223
-1183
-498
+481
+210
+1150
+419
 -1
 -1
 3.29
@@ -226,8 +257,8 @@ GRAPHICS-WINDOW
 1
 0
 200
--40
-40
+-30
+30
 1
 1
 1
@@ -270,9 +301,9 @@ NIL
 
 SLIDER
 14
-90
+54
 164
-123
+87
 N
 N
 5
@@ -285,10 +316,10 @@ HORIZONTAL
 
 TEXTBOX
 17
-278
-222
-296
-1. Change strength
+159
+85
+177
+Strength
 12
 0.0
 1
@@ -301,13 +332,13 @@ CHOOSER
 visualization
 visualization
 "Heatmap timeline" "Agents' trajectories"
-0
+1
 
 PLOT
-1182
-341
-1552
-497
+1149
+287
+1415
+419
 Histogram Attitudes
 Current Attitude
 NIL
@@ -319,18 +350,18 @@ true
 false
 "" "set-plot-y-range 0 count turtles / 12.5\nset-plot-x-range 0 - M - 0.05  (M + 0.05) "
 PENS
-"default" 0.0909 1 -13345367 true "" "histogram [opinion] of turtles"
+"default" 0.1818 1 -13345367 true "" "histogram [opinion] of turtles"
 
 SLIDER
-15
-188
-218
-221
+186
+287
+311
+320
 theta
 theta
 0
 0.3
-0.098
+0.01
 0.002
 1
 NIL
@@ -367,35 +398,35 @@ NIL
 HORIZONTAL
 
 SLIDER
-34
-576
-220
-609
+12
+535
+190
+568
 lambda
 lambda
 0.01
 3.5
-1.0
-0.005
+0.5
+0.01
 1
 NIL
 HORIZONTAL
 
 TEXTBOX
 20
-73
+37
 170
-91
+55
 Setup parameters
 12
 0.0
 1
 
 SWITCH
-1190
-139
-1280
-172
+1424
+74
+1514
+107
 rolling
 rolling
 0
@@ -407,39 +438,29 @@ TEXTBOX
 10
 1016
 33
-B. Time evoultion of opinion landscapes / Trajectories of opinions
+Visualization Parameters and Controls
 18
-0.0
+14.0
 1
 
 TEXTBOX
-986
-617
-1673
-641
-Monitors of attitude distribution and aggregate attitudes over time
+419
+136
+1174
+160
+Trajectories of attitudes and output measures, distribution of attitudes
 18
-0.0
-1
-
-TEXTBOX
-10
-10
-372
-66
-Attitude dynamics
-18
-0.0
+14.0
 1
 
 TEXTBOX
 12
-48
-162
-70
-A. Parameters
+12
+289
+32
+Model Parameters
 18
-0.0
+14.0
 1
 
 TEXTBOX
@@ -474,33 +495,23 @@ Reduce grapic updates
 1
 
 TEXTBOX
-1444
-12
-1594
-34
-D. Examples
+479
+559
+629
+581
+Scenarios
 18
-0.0
+14.0
 1
 
 TEXTBOX
-1442
-41
-1711
-59
+477
+588
+746
+606
 Set parameters for certain examles
 12
 0.0
-1
-
-TEXTBOX
-1566
-17
-1750
-35
-(Don't forget to click \"Run!\")
-12
-15.0
 1
 
 SLIDER
@@ -536,31 +547,31 @@ NIL
 1
 
 MONITOR
-454
-452
-514
-497
-min
+422
+374
+482
+419
+- M
 - M
 17
 1
 11
 
 TEXTBOX
-446
-356
-511
-384
-neutral = 0
+423
+304
+481
+332
+neutral=0
 11
 0.0
 1
 
 SLIDER
-15
-297
-144
-330
+80
+150
+209
+183
 alpha
 alpha
 0
@@ -571,21 +582,11 @@ alpha
 NIL
 HORIZONTAL
 
-CHOOSER
-15
-528
-221
-573
-motivated_cognition
-motivated_cognition
-"no" "latitude of acceptance" "latitude of acceptance and boomerang"
-0
-
 PLOT
-226
-526
-399
-646
+195
+498
+362
+618
 change function
 message
 NIL
@@ -600,25 +601,25 @@ PENS
 "" 1.0 0 -16777216 true "" "foreach ( n-values 100 [ [x] -> x / 100 * 2.5 * lambda ] ) [ [x] -> plotxy x ( opinion_change 0 1 x) ]"
 
 SLIDER
-34
-611
-220
-644
+12
+570
+190
+603
 k
 k
 0
 35
-2.0
+10.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-152
-299
-348
-332
+821
+561
+1017
+594
 intergroup_credibility
 intergroup_credibility
 0
@@ -630,10 +631,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-14
-125
-163
-158
+821
+525
+1017
+558
 initial_groupspread
 initial_groupspread
 0
@@ -645,10 +646,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-113
-463
-213
-496
+1063
+647
+1163
+680
 b
 b
 0
@@ -660,10 +661,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-13
-426
-176
-459
+187
+332
+311
+365
 M
 M
 0.1
@@ -675,10 +676,10 @@ NIL
 HORIZONTAL
 
 SWITCH
-13
-463
-111
-496
+963
+647
+1061
+680
 polarity
 polarity
 1
@@ -686,10 +687,10 @@ polarity
 -1000
 
 BUTTON
-289
-650
-399
-683
+281
+725
+391
+758
 Update Plots
 every 0.1 [\n  clear-all-plots\n  update-plots\n  ]
 T
@@ -703,10 +704,10 @@ NIL
 1
 
 PLOT
-226
-399
-398
-519
+1171
+619
+1343
+739
 polarity factor
 attitude
 NIL
@@ -738,10 +739,10 @@ NIL
 1
 
 BUTTON
-545
-35
-686
-68
+691
+637
+832
+670
 Run until world full
 run_until_world_full
 NIL
@@ -755,89 +756,78 @@ NIL
 1
 
 TEXTBOX
-136
-653
-286
-683
+128
+728
+278
+758
 Click to play with parameters before run:
 12
 0.0
 1
 
 CHOOSER
-15
-224
-220
-269
+13
+276
+184
+321
 theta_as
 theta_as
-"probability for new random" "probability for initial attitude" "weight on initial attitude"
+"idiosyncrasy probability" "back to inital probability" "weight on initial attitude"
 0
 
 MONITOR
-454
-223
-514
-268
-max (M)
+421
+210
+481
+255
+M
 M
 17
 1
 11
 
 SLIDER
-89
-362
-214
-395
+87
+221
+212
+254
 eta
 eta
 0
 1
-0.0
+1.0
 0.01
 1
 NIL
 HORIZONTAL
 
 TEXTBOX
-221
-373
-371
-391
-integration
+220
+234
+305
+267
+information integration
 12
 0.0
 1
 
 TEXTBOX
-20
-373
-86
-391
-contagion
+18
+232
+84
+262
+affective contagion
 12
 0.0
 1
 
-MONITOR
-976
-663
-1033
-708
-bw
-bw
-3
-1
-11
-
 BUTTON
-1450
-59
-1513
-92
+485
+606
+548
+639
 1-A
-set_baseline\nsetup
+scenario \"1-A\"
 NIL
 1
 T
@@ -849,12 +839,12 @@ NIL
 1
 
 BUTTON
-1517
-59
-1580
-92
+552
+606
+615
+639
 1-B
-set_baseline\nset eta 0\nset theta 0.17\nsetup
+scenario \"1-B\"
 NIL
 1
 T
@@ -866,12 +856,12 @@ NIL
 1
 
 BUTTON
-1583
-59
-1646
-92
+618
+606
+681
+639
 1-C
-set_baseline\nset eta 0\nsetup
+scenario \"1-C\"
 NIL
 1
 T
@@ -882,35 +872,13 @@ NIL
 NIL
 1
 
-MONITOR
-1112
-179
-1186
-224
-extremity
-cum_extremity / M
-3
-1
-11
-
-MONITOR
-1614
-456
-1769
-501
-NIL
-imbalance-extremists
-3
-1
-11
-
 BUTTON
-1517
-95
-1580
-128
+552
+642
+615
+675
 2-B
-set_baseline\nset eta 0.5\nset motivated_cognition \"latitude of acceptance\"\nset lambda 0.25\nset k 2\nsetup
+scenario \"2-B\"
 NIL
 1
 T
@@ -922,12 +890,12 @@ NIL
 1
 
 BUTTON
-1449
-131
-1512
-164
+484
+678
+547
+711
 3-A
-set_baseline\nset motivated_cognition \"latitude of acceptance\"\nset lambda 0.5\nset k 10\nsetup\n
+scenario \"3-A\"
 NIL
 1
 T
@@ -939,12 +907,12 @@ NIL
 1
 
 BUTTON
-1449
-95
-1512
-128
+484
+642
+547
+675
 2-A
-set_baseline\nset initial_groupspread 3\nset intergroup_credibility 0.1\nsetup
+scenario \"2-A\"
 NIL
 1
 T
@@ -956,12 +924,12 @@ NIL
 1
 
 BUTTON
-1583
-94
-1646
-127
+618
+641
+681
+674
 2-C
-set_baseline\nset eta 0\nset motivated_cognition \"latitude of acceptance\"\nsetup
+scenario \"2-C\"
 NIL
 1
 T
@@ -973,12 +941,12 @@ NIL
 1
 
 BUTTON
-1517
-131
-1580
-164
+552
+678
+615
+711
 3-B
-set_baseline\nset eta 0.9\nset motivated_cognition \"latitude of acceptance\"\nset lambda 0.5\nset k 10\nsetup
+scenario \"3-B\"
 NIL
 1
 T
@@ -990,12 +958,12 @@ NIL
 1
 
 BUTTON
-1583
-130
-1646
-163
+618
+677
+681
+710
 3-C
-set_baseline\nset eta 0.75\nset motivated_cognition \"latitude of acceptance\"\nset k 10\nsetup
+scenario \"3-C\"
 NIL
 1
 T
@@ -1007,78 +975,41 @@ NIL
 1
 
 TEXTBOX
-16
-169
-166
-187
-Independent attitudes
-12
-0.0
-1
-
-TEXTBOX
-159
-276
-309
-294
+827
+503
+977
+521
 2. Source credibility
 12
 0.0
 1
 
 TEXTBOX
-16
-341
-166
-359
-3. Attitude change
-12
-0.0
-1
-
-TEXTBOX
-16
-404
-166
-422
+961
+624
+1111
+642
 4. Polarity
 12
 0.0
 1
 
 TEXTBOX
-21
-511
-171
-529
+15
+475
+165
+493
 5. Motivated cognition
 12
 0.0
 1
 
-BUTTON
-1564
-568
-1789
-601
-Extremism through polarity
-set_baseline\nset alpha 0.5\nset motivated_cognition \"latitude of acceptance\"\nset latitude_acceptance 2\nset sharpness_acceptance 20\nset polarity true\nset M 2\nsetup
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
 PLOT
-1182
-178
-1552
-341
-Output measures (normalized)
+1149
+166
+1415
+288
+Output measures
 NIL
 NIL
 0.0
@@ -1090,16 +1021,16 @@ true
 "" "ifelse rolling [\n  ifelse ticks > (max-pxcor)\n    [set-plot-x-range (ticks - max-pxcor) ticks]\n    [set-plot-x-range 0 max-pxcor]\n  ] [\n  ifelse ticks > (max-pxcor)\n    [set-plot-x-range 0 ticks]\n    [set-plot-x-range 0 max-pxcor]\n  ]"
 PENS
 "bias" 1.0 0 -2674135 true "" "plot abs mean [opinion] of turtles / M"
-"std. dev." 1.0 0 -16777216 true "" "plot standard-deviation [opinion] of turtles / M"
+"diversity" 1.0 0 -16777216 true "" "plot standard-deviation [opinion] of turtles / M"
 "fragmentation" 1.0 0 -13791810 true "" "plot fragmentation / M / 4"
 "extremity" 1.0 0 -5825686 true "" "plot extremity / M"
-"initial std. dev" 1.0 0 -7500403 true "" "plot 1 / M"
+"initial diversity" 1.0 0 -7500403 true "" "plot 1 / M"
 
 SLIDER
-1009
-140
-1181
-173
+1116
+59
+1236
+92
 spinup_tick
 spinup_tick
 1
@@ -1111,32 +1042,32 @@ NIL
 HORIZONTAL
 
 MONITOR
-1000
-179
-1057
-224
-std.dev.
+996
+166
+1056
+211
+diversity
 cum_sd / M
 3
 1
 11
 
 MONITOR
-1055
-179
-1112
-224
-frag.
+1054
+166
+1149
+211
+fragmentation
 cum_fragmentation / M / 4
 3
 1
 11
 
 MONITOR
-944
-179
-1001
-224
+940
+166
+997
+211
 bias
 cum_biasmean / M
 3
@@ -1144,51 +1075,40 @@ cum_biasmean / M
 11
 
 TEXTBOX
-840
-501
-897
-519
-time -->
-12
+810
+193
+867
+211
+time ->
+11
 0.0
 1
 
 TEXTBOX
-458
-297
-509
-339
+424
+263
+475
+305
 positive attitudes
 11
 0.0
 1
 
 TEXTBOX
-457
-397
-508
-425
+424
+335
+475
+363
 negative attitudes
 11
 0.0
 1
 
 MONITOR
-1603
-634
-1708
-679
-NIL
-fragmentation
-17
-1
-11
-
-MONITOR
-533
-178
-583
-223
+500
+165
+550
+210
 NIL
 alpha
 17
@@ -1196,10 +1116,10 @@ alpha
 11
 
 MONITOR
-582
-178
-632
-223
+549
+165
+599
+210
 NIL
 eta
 17
@@ -1207,10 +1127,10 @@ eta
 11
 
 MONITOR
-631
-178
-681
-223
+598
+165
+648
+210
 NIL
 theta
 17
@@ -1218,10 +1138,10 @@ theta
 11
 
 TEXTBOX
-457
-186
-547
-222
+424
+173
+514
+209
 Input parameters
 12
 0.0
@@ -1229,57 +1149,105 @@ Input parameters
 
 TEXTBOX
 875
-190
+174
 941
-218
+202
 Output measures
 12
 0.0
 1
 
 MONITOR
-680
-129
-735
-174
-NIL
+646
+165
+701
+210
 lambda
+ifelse-value motivated_cognition [lambda] [\"\"]
 2
 1
 11
 
 MONITOR
-733
-129
-783
-174
-NIL
+699
+165
+756
+210
 k
+ifelse-value motivated_cognition [k] [\"\"]
 1
 1
 11
 
 MONITOR
-780
-129
-830
-174
-NIL
+746
+165
+796
+210
 b
+ifelse-value polarity [b] [\"\"]
 1
 1
 11
 
-MONITOR
-728
-613
-868
-658
-NIL
-fraction_extremists
-3
+SWITCH
+691
+674
+867
+707
+run_and_export_figs
+run_and_export_figs
+0
 1
-11
+-1000
+
+SWITCH
+12
+499
+190
+532
+motivated_cognition
+motivated_cognition
+0
+1
+-1000
+
+TEXTBOX
+1124
+94
+1233
+118
+Tick to start cumulative measures
+9
+0.0
+1
+
+BUTTON
+682
+741
+860
+774
+NIL
+export_all_scenarios
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+TEXTBOX
+17
+200
+167
+218
+Degree of integration
+12
+0.0
+1
 
 @#$#@#$#@
 # Continuous Opinion Dynamics under Bounded Confidence with Dyadic Interaction, Heterogeneous Bounds of Confidence and Independent Opinion Formation
