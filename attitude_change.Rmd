@@ -97,7 +97,9 @@ image_read(paste0("figures_netlogo/3-C_interface.png")) %>% crop_histogram()
 ## NetLogo BehaviorSpace Analysis
 
 ```{r AlphaEtaTheta_BiasDiversity}
-d <- read_csv(file = "data/attitude_change delta_p2-table.csv",	skip = 6)
+
+# d <- read_csv(file = "data/attitude_change delta_p2-table.csv",	skip = 6)
+d <- read_csv(file = "data/attitude_change_2 AlphaEtaTheta-table.csv",	skip = 6)
 g1 <- d %>% filter(eta == 0, alpha %in% c(0.1, 0.2, 0.3, 0.4, 0.5)) %>%
 	rename(Bias=cum_biasmean, Diversity=cum_sd) %>% 
 	gather(key="measure", value="value", Bias, Diversity) %>% 
