@@ -3,10 +3,10 @@ title: "Attitude Change, Figures"
 author: "Jan Lorenz"
 date: "August 21, 2018"
 output:
-  html_document:
-    df_print: paged
   pdf_document:
     latex_engine: xelatex
+  html_document:
+    df_print: paged
 editor_options:
   chunk_output_type: console
 ---
@@ -23,6 +23,109 @@ crop <- function(im, left = 0, top = 0, right = 0, bottom = 0) {
   image_crop(im, glue::glue("{w-left-right}x{h-top-bottom}+{left}+{top}"))
 }
 ```
+
+## Polarity
+
+```{r}
+polarity <- function(a,B) ifelse(a>=B, 0, (B^2 - a^2)/B^2)
+ggplot(data.frame(x=0), aes(x)) + 
+	stat_function(fun=polarity, args = list(B=15), aes(color = "black")) + 
+	stat_function(fun=polarity, args = list(B=6), aes(color = "gray20")) + 
+	stat_function(fun=polarity, args = list(B=3.5), aes(color = "gray40"), size = 1.5) + 
+	stat_function(fun=polarity, args = list(B=3), aes(color = "gray60")) + 
+	stat_function(fun=polarity, args = list(B=2), aes(color = "gray80")) + 
+	xlim(0,6) + scale_y_continuous(breaks = c(0,0.5,1)) + theme_bw() + 
+	scale_colour_manual(name="maximal attitude",
+    values=c("gray80","gray60","gray40","gray20","black"), 
+    labels=paste("B =",c(15,6,3.5,3,2))) +
+	labs(x="deviation of attitude from neutral", y="polarity factor") +
+	theme(legend.position = "right") + 
+	guides(color = guide_legend(reverse = TRUE), size="none")
+
+acceptance <- function(d,l,k) l^k/(l^k + d^k)
+g1 <- ggplot(data.frame(x=0), aes(x)) + 
+	stat_function(fun=acceptance, args = list(l=2,k=2), aes(color = "black")) + 
+	stat_function(fun=acceptance, args = list(l=1.5,k=2), aes(color = "gray20")) + 
+	stat_function(fun=acceptance, args = list(l=1,k=2), aes(color = "gray40"), size = 1.5) + 
+	stat_function(fun=acceptance, args = list(l=0.5,k=2), aes(color = "gray60")) + 
+	stat_function(fun=acceptance, args = list(l=0.25,k=2), aes(color = "gray80")) + 
+	geom_point(x=0.25, y=0.5, color = "black") + 
+	geom_point(x=0.5, y=0.5, color = "gray20") + 
+	geom_point(x=1, y=0.5, color = "gray40") + 
+	geom_point(x=1.5, y=0.5, color = "gray60") + 
+	geom_point(x=2, y=0.5, color = "gray80") + 
+	xlim(0,3) + scale_y_continuous(breaks = c(0,0.5,1)) + theme_bw() + 
+	scale_colour_manual(name="lattitude\nof acceptance",
+    values=c("gray80","gray60","gray40","gray20","black"), 
+    labels=paste("λ =",c(2,1.5,1,0.5,0.25))) +
+	labs(x="discrepancy", y="motivated cognition factor", title = "With sharpness k = 2") +
+	theme(legend.position = "right") + 
+	guides(color = "none", size="none")
+g2 <- ggplot(data.frame(x=0), aes(x)) + 
+	stat_function(fun=acceptance, args = list(l=2,k=10), aes(color = "black")) + 
+	stat_function(fun=acceptance, args = list(l=1.5,k=10), aes(color = "gray20")) + 
+	stat_function(fun=acceptance, args = list(l=1,k=10), aes(color = "gray40")) + 
+	stat_function(fun=acceptance, args = list(l=0.5,k=10), aes(color = "gray60")) + 
+	stat_function(fun=acceptance, args = list(l=0.25,k=10), aes(color = "gray80")) + 
+	geom_point(x=0.25, y=0.5, color = "black") + 
+	geom_point(x=0.5, y=0.5, color = "gray20") + 
+	geom_point(x=1, y=0.5, color = "gray40") + 
+	geom_point(x=1.5, y=0.5, color = "gray60") + 
+	geom_point(x=2, y=0.5, color = "gray80") + 
+	xlim(0,3) + scale_y_continuous(breaks = c(0,0.5,1)) + theme_bw() + 
+	scale_colour_manual(name="lattitude\nof acceptance",
+    values=c("gray80","gray60","gray40","gray20","black"), 
+    labels=paste("λ =",c(2,1.5,1,0.5,0.25))) +
+	labs(x="discrepancy", y="", title = "With sharpness k = 10") +
+	theme(legend.position = "right") + 
+	guides(color = guide_legend(reverse = TRUE), size="none")
+grid.arrange(g1,g2, ncol=2, widths=c(1.35,2))
+
+
+acceptance_change <- function(d,l,k = 10) d * l^k/(l^k + d^k)
+g1 <- ggplot(data.frame(x=0), aes(x)) + 
+	stat_function(fun=acceptance_change, args = list(l=2,k=2), aes(color = "black")) + 
+	stat_function(fun=acceptance_change, args = list(l=1.5,k=2), aes(color = "gray20")) + 
+	stat_function(fun=acceptance_change, args = list(l=1,k=2), aes(color = "gray40"), size = 1.5) + 
+	stat_function(fun=acceptance_change, args = list(l=0.5,k=2), aes(color = "gray60")) + 
+	stat_function(fun=acceptance_change, args = list(l=0.25,k=2), aes(color = "gray80")) + 
+	geom_point(x=0.25, y=acceptance_change(0.25, l=0.25, k=2), color = "black") + 
+	geom_point(x=0.5, y=acceptance_change(0.5, l=0.5, k=2), color = "gray20") + 
+	geom_point(x=1, y=acceptance_change(1, l=1, k=2), color = "gray40") + 
+	geom_point(x=1.5, y=acceptance_change(1.5, l=1.5, k=2), color = "gray60") + 
+  geom_point(x=2, y=acceptance_change(2, l=2, k=2), color = "gray80") + 
+	xlim(0,3) + scale_y_continuous(breaks = c(0,0.5,1)) + theme_bw() + 
+	scale_colour_manual(name="lattitude\nof acceptance",
+    values=c("gray80","gray60","gray40","gray20","black"), 
+    labels=paste("λ =",c(2,1.5,1,0.5,0.25))) +
+	labs(x="discrepancy", y="motivated cognition factor", title = "With sharpness k = 2") +
+	theme(legend.position = "right") + 
+	guides(color = "none", size="none")
+g2 <- ggplot(data.frame(x=0), aes(x)) + 
+	stat_function(fun=acceptance_change, args = list(l=2,k=10), aes(color = "black")) + 
+	stat_function(fun=acceptance_change, args = list(l=1.5,k=10), aes(color = "gray20")) + 
+	stat_function(fun=acceptance_change, args = list(l=1,k=10), aes(color = "gray40")) + 
+	stat_function(fun=acceptance_change, args = list(l=0.5,k=10), aes(color = "gray60")) + 
+	stat_function(fun=acceptance_change, args = list(l=0.25,k=10), aes(color = "gray80")) + 
+	geom_point(x=0.25, y=acceptance_change(0.25, l=0.25), color = "black") + 
+	geom_point(x=0.5, y=acceptance_change(0.5, l=0.5), color = "gray20") + 
+	geom_point(x=1, y=acceptance_change(1, l=1), color = "gray40") + 
+	geom_point(x=1.5, y=acceptance_change(1.5, l=1.5), color = "gray60") + 
+  geom_point(x=2, y=acceptance_change(2, l=2), color = "gray80") + 
+	xlim(0,3) + scale_y_continuous(breaks = c(0,0.5,1)) + theme_bw() + 
+	scale_colour_manual(name="lattitude\nof acceptance",
+    values=c("gray80","gray60","gray40","gray20","black"), 
+    labels=paste("λ =",c(2,1.5,1,0.5,0.25))) +
+	labs(x="discrepancy", y="", title = "With sharpness k = 10") +
+	theme(legend.position = "right") + 
+	guides(color = guide_legend(reverse = TRUE), size="none")
+grid.arrange(g1,g2, ncol=2, widths=c(1.35,2))
+
+
+
+```
+
+
 
 ## Microdynamics with different theta
 
@@ -50,12 +153,12 @@ ContagionVsInfoint <- function(a = -0.5, m = 1, hjust = 0, end = c(0,0,0),
   		arrow = arrow(length=unit(0.15,"cm"))) +
   	annotate("text", x=a+end[2]*(m-0.5*a)+(0.5-hjust[2])*0.1, y=0.65, hjust=hjust[2],
   		label=ifelse(equations," η = 0.5 ","")) +
-  	# integration
+  	# assimilation
   	annotate(ifelse(a==m,"point","segment"), x=a, y=0.9, xend=a+(m-1*a), yend=0.9, 
   		arrow = arrow(length=unit(0.15,"cm"))) +
   	# annotate("text", x=a+end[3]*(m-1*a)+(0.5-hjust[3])*0.1, y=0.9, hjust=hjust[3],
   	annotate("text", x=a+end[3]*(m-1*a), y=0.9, hjust=hjust[3],
-  		label=paste0(ifelse(equations," η = 1 ",""), ifelse(labels,"(integration)","")))
+  		label=paste0(ifelse(equations," η = 1 ",""), ifelse(labels,"(assimilation)","")))
 }
 G <- gridExtra::grid.arrange(grobs = list(
 	ContagionVsInfoint(a = -0.5, m = 1, hjust = 0, end = c(1,1,1),equations=TRUE),
@@ -110,7 +213,7 @@ g1 <- d %>% filter(eta == 0, alpha %in% c(0.1, 0.2, 0.3, 0.4, 0.5)) %>%
 	scale_size_manual(values=0.5*c(1,3,1,1,1)) +
 	labs(x="θ (idiosyncrasy prob.)", y="", 
 		title="Increase idiosyncrasy: \n Transition to unbiased diversity",
-		caption="always η = 0 (affective contagion) ") +
+		caption="always ρ = 0 (contagion) ") +
 	guides(color=guide_legend(title="α (strength)", title.position = "top"), 
 		size="none") + 
 	theme(legend.position = "bottom")
@@ -122,8 +225,8 @@ g2 <- d %>% filter(p  %in% c(0.1,0.05,0.01, 0.15, 0.2), alpha == 0.2) %>%
 	facet_grid(measure ~ .) + theme_bw() + 
 	scale_color_manual(values=c("black","red","green","blue","violet")) +
 	scale_size_manual(values=0.5*c(3,1,1,1,1)) +
-	labs(x="η (degree of integration)", y="", 
-		title="Increase degree of integration: \n Tipping to central consensus",
+	labs(x="ρ (degree of assimilation)", y="", 
+		title="Increase degree of assimilation: \n Tipping to central consensus",
 		caption="always strength α = 0.2") +
 	guides(color=guide_legend(title="θ (idiosyncrasy prob.)", title.position = "top"),
 		size="none") + 
@@ -140,13 +243,20 @@ d %>% filter(alpha  %in% c(0.1,0.2,0.3,0.4,0.5), p == 0.1) %>%
 	facet_grid(measure ~ .) + theme_bw() + 
 	scale_color_manual(values=c("red","black","green","blue","violet")) +
 	scale_size_manual(values=0.5*c(1,3,1,1,1)) +
-	labs(x="η (degree of integration)", y="", 
-		title="Increase degree of integration: \n Tipping to central consensus",
+	labs(x="ρ (degree of assimilation)", y="", 
+		title="Increase degree of assimilation: \n Tipping to central consensus",
 		caption="always strength θ = 0.1") +
 	guides(color=guide_legend(title="α (strength)", title.position = "top"),
 		size="none") + 
 	theme(legend.position = "bottom")
 ```
+
+
+```{r}
+d <- read_csv(file = "data/attitude_change_2 LambdaEta-table.csv",	skip = 6)
+
+```
+
 
 
 

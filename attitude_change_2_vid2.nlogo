@@ -1,7 +1,7 @@
-extensions [r]
+extensions [r vid]
 
-turtles-own [opinion group initial_opinion opinion-list focus?]
-globals [draw? cum_fragmentation cum_sd cum_biasmean cum_extremity cum_extremists file_open?]
+turtles-own [opinion lambda_i rho_i group initial_opinion opinion-list focus?]
+globals [draw? video? cum_fragmentation cum_sd cum_biasmean cum_extremity cum_extremists file_open?]
 
 ;; BUTTON PROCEDURES
 
@@ -13,15 +13,18 @@ to setup
   reset-ticks
   ask turtles [
     set group random 2 ;; group is either 0 or 1
+    set lambda_i ifelse-value (lambda_dispersion = 0) [lambda] [random-gamma (lambda ^ 2 / lambda_dispersion ^ 2) (1 / (lambda_dispersion ^ 2 / lambda))]
+    set rho_i random-beta rho rho_dispersion
     set opinion new_opinion
     set initial_opinion opinion
     set opinion-list (list opinion)
-    setxy 0 confine-opinion-scale-to-max-pycor opinion M
+    setxy 0 confine-opinion-scale-to-max-pycor opinion B
     set color 65 + group * 60
     set focus? false
     ]
   ask one-of turtles [set focus? true]
   set draw? true
+  set video? false
   update-plots
 end
 
@@ -46,12 +49,31 @@ to go
       set cum_extremists ((ticks - spinup_tick) * cum_extremists + fraction_extremists) /  (ticks - spinup_tick + 1)
     ]
   ]
-  if (draw?) [draw_trajectories]
+  if (draw?) [
+    draw_trajectories
+    if video? and (vid:recorder-status = "recording") [
+      vid:record-interface
+    ]
+  ]
 end
 
 to change_focus
   ask turtles [set focus? false]
   ask one-of turtles [set focus? true]
+end
+
+to go_tmax [tmax recording?]
+  let temp skip_ticks_draw
+  if recording? [
+    set skip_ticks_draw 1
+  ]
+  repeat tmax [
+    go
+    if recording? [vid:record-interface]
+  ]
+  if recording? [
+    set skip_ticks_draw temp
+  ]
 end
 
 to run_until_world_full
@@ -74,7 +96,7 @@ to update_opinion
     let other_turtle one-of turtles
     let source_credibility ifelse-value (group = [group] of other_turtle) [1] [intergroup_credibility]
     let weight ifelse-value (theta_as = "weight on initial attitude") [theta] [0]
-    set opinion (1 - weight) * (opinion + opinion_change opinion source_credibility [opinion] of other_turtle) + weight * initial_opinion
+    set opinion (1 - weight) * (opinion + opinion_change opinion source_credibility ([opinion] of other_turtle) lambda_i rho_i) + weight * initial_opinion
    ]
 end
 
@@ -83,7 +105,7 @@ to draw_trajectories
   clear-drawing
   ask turtles [
     pen-up
-    setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) M)
+    setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) B)
     if (visualization = "Agents' trajectories") [
       set color ifelse-value (intergroup_credibility = 1 and initial_groupspread = 0) [item (who mod length base-colors) base-colors] [65 + group * 60]
     ]
@@ -93,7 +115,7 @@ to draw_trajectories
     ask turtles [ pen-up ]
     if (visualization = "Agents' trajectories") [ ask turtles [ pen-down ] ]
     foreach sort turtles [ [?1] -> ;; with foreach for drawing always in the same order
-       ask ?1 [setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) M) ]
+       ask ?1 [setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) B) ]
     ]
     ifelse (visualization = "Heatmap timeline")
       [ ask patches with [pxcor = t-counter ] [ set pcolor colorcode (count turtles-here / count turtles) color_axis_max ] ]
@@ -103,23 +125,23 @@ to draw_trajectories
   if (focus_one) [
     ask turtles with [focus?] [
       pen-up
-      setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) M)
+      setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) B)
       pen-down
       set pen-size 3
       set color white
       set t-counter 1
       while [ t-counter < (length ( [opinion-list] of turtle 1 )) ] [
-        setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) M)
+        setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) B)
         set t-counter t-counter + 1
       ]
       pen-up
-      setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) M)
+      setxy 0 (confine-opinion-scale-to-max-pycor (item 0 opinion-list) B)
       pen-down
       set pen-size 1
       set color 65 + group * 60
       set t-counter 1
       while [ t-counter < (length ( [opinion-list] of turtle 1 )) ] [
-        setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) M)
+        setxy t-counter (confine-opinion-scale-to-max-pycor (item t-counter opinion-list) B)
         set t-counter t-counter + 1
       ]
     ]
@@ -128,16 +150,27 @@ end
 
 ;; REPORTERS
 
-to-report new_opinion
-  report max list (0 - M) (min list M (random-normal 0 1) - (initial_groupspread / 2) + (initial_groupspread * group))
+to-report random-beta [mu sigma]
+  ifelse (sigma = 0 or mu = 1 or mu = 0) [report mu] [
+   set sigma precision (min list sigma (sqrt (mu * (1 - mu) * 0.95))) 5
+   let nu mu * (1 - mu) / sigma ^ 2 - 1
+   let a max list 0.01 mu * nu
+   let beta max list 0.01 (1 - mu) * nu
+   let x random-gamma a 1
+   report ( x / ( x + random-gamma beta 1) )
+  ]
 end
 
-to-report opinion_change [a s me]
-  let core me - eta * a
+to-report new_opinion
+  report max list (0 - B) (min list B (random-normal 0 1) - (initial_groupspread / 2) + (initial_groupspread * group))
+end
+
+to-report opinion_change [a s me la rh]
+  let core me - rh * a
   let discrepancy abs (me - a)
   let polarity_factor compute_polarity a
-  let motcog ifelse-value (motivated_cognition) [motivated_cognition_factor discrepancy lambda k] [1]
-  report max list (0 - M - a) (min list (M - a) (alpha * s * core * polarity_factor * motcog ))
+  let motcog ifelse-value (motivated_cognition) [motivated_cognition_factor discrepancy la k] [1]
+  report max list (0 - B - a) (min list (B - a) (alpha * s * core * polarity_factor * motcog ))
 end
 
 to-report motivated_cognition_factor [d l kk]
@@ -145,7 +178,7 @@ to-report motivated_cognition_factor [d l kk]
 end
 
 to-report compute_polarity [a]
-  report ifelse-value (polarity) [max list (0) (M ^ b - (abs a) ^ b) / M ^ b] [1]
+  report ifelse-value (polarity) [max list (0) (B ^ 2 - (abs a) ^ 2) / B ^ 2] [1]
 end
 
 to-report confine-opinion-scale-to-max-pycor [x ma]
@@ -166,8 +199,8 @@ end
 
 to-report fragmentation
   r:put "x" [opinion] of turtles
-  r:put "M" M
-  report r:get "fragmentation(x, bw = 0.1, dx = 0.01, from=-M, to=M)"
+  r:put "B" B
+  report r:get "fragmentation(x, bw = 0.05, dx = 0.01, from=-B, to=B)"
 end
 
 to-report extremity
@@ -175,48 +208,87 @@ to-report extremity
 end
 
 to-report fraction_extremists
-  report count turtles with [abs opinion > M - 0.1] / N
+  report count turtles with [abs opinion > B - 0.1] / N
 end
 
 to set_baseline
   set N 500
-  set eta 0
+  set rho 0
   set alpha 0.2
   set theta 0.01
-  set M 3.5
+  set B 3.5
   set motivated_cognition false
   set lambda 0.5
   set k 2
+  set lambda_dispersion 0
+  set rho_dispersion 0
   set polarity false
-  set b 2
   set intergroup_credibility 1
   set theta_as "idiosyncrasy probability"
   set initial_groupspread 0
   set iterations_per_tick 1
 end
 
+; On Source Credibility: With two groups, initial group spread of 1 std and intergroup_credibility of 0.5 all effects are robust. In polarization outcomes of course fractions of the groups differ at the two poles.
+; Bonus, when does something new happen?
+; On polarity: With polarity all effects remain essentially the same. Less extremal peaks in 2-B, 3-B,
+; Bonus: When does something new happen? With tighter Boundaries there could be a drift of a central cluster. Example.
+; On other mechanisms of to model idiosyncrasy: With back to initial -> no change (check)
+; On other mechanisms of to model idiosyncrasy: With weights on initial -> Radicalisation in 3-A, Polarization in 3-B,
+
 to scenario [name]
   set_baseline
+  let tmax round (max-pxcor / skip_ticks_draw)
   if name = "1-B" [ set theta 0.17 ]
-  if name = "1-C" [ set eta 1 ]
+  if name = "1-C" [ set rho 1 ]
   if name = "2-A" [ set motivated_cognition true ]
-  if name = "2-B" [ set eta 0.5 set motivated_cognition true set lambda 0.25 ]
-  if name = "2-C" [ set eta 1 set initial_groupspread 3 set intergroup_credibility 0.1 ]
-  if name = "3-A" [ set eta 0.5 set motivated_cognition true set lambda 1.8 set k 10 ]
-  if name = "3-B" [ set eta 0.9 set motivated_cognition true set k 10 ]
-  if name = "3-C" [ set eta 1 set motivated_cognition true set k 10 ]
+  if name = "2-B" [ set rho 0.5 set motivated_cognition true set lambda 0.25 ]
+  if name = "2-C" [ set rho 1 set initial_groupspread 3 set intergroup_credibility 0.1 ]
+  if name = "3-A" [ set rho 0.5 set motivated_cognition true set lambda 1.8 set k 10 ]
+  if name = "3-B" [ set rho 0.9 set motivated_cognition true set k 10 ]
+  if name = "3-C" [ set rho 1 set motivated_cognition true set k 10 ]
+  if name = "Contagion" [ set alpha 0.05  set tmax max-pxcor]
+  if name = "ContagionIdiosyncrasy" [ set alpha 0.05 set theta 0.05 set tmax max-pxcor]
+  if name = "Assimilation" [ set rho 1 set theta 0.01 set tmax max-pxcor]
+  if name = "AssimilationContagion" [ set rho 0.85 set theta 0.01 set tmax max-pxcor]
+  if name = "MotCognitionContagion" [ set rho 0  set theta 0.01  set motivated_cognition true  set lambda 0.5  set tmax max-pxcor]
+  if name = "MotCognitionAssimilation" [ set rho 1  set theta 0.01  set motivated_cognition true  set lambda 0.5  set tmax max-pxcor]
+  if name = "MotCognitionSharpAssimilation" [ set rho 1  set theta 0.01  set motivated_cognition true  set lambda 0.5  set k 10  set tmax max-pxcor]
+  if name = "MotCognitionSharpAssimilationNoIdio" [ set rho 1  set theta 0 set motivated_cognition true  set lambda 0.5  set k 10  set iterations_per_tick 200 set tmax max-pxcor]
+  if name = "HeterogeneousLatitudes" [ set rho 1  set theta 0.002 set motivated_cognition true  set lambda 1  set lambda_dispersion 0.3 set k 10  set iterations_per_tick 20 set tmax 2 * max-pxcor]
+  if name = "HeterogeneousLatitudesSharp" [ set rho 1  set theta 0.002 set motivated_cognition true  set lambda 1  set lambda_dispersion 0.3 set k 30  set iterations_per_tick 30 set tmax 2 * max-pxcor]
+
   setup
   if run_and_export_figs [
     run_until_world_full
     set visualization "Heatmap timeline"
     draw_trajectories
-    export-interface (word "figures_netlogo/" name "_interface_heatmap.png")
+    export-interface (word "figs_netlogo/" name "_interface_heatmap.png")
     set visualization "Agents' trajectories"
     draw_trajectories
-    export-interface (word "figures_netlogo/" name "_interface.png")
+    export-interface (word "figs_netlogo/" name "_interface.png")
     if (file_open? = true) [
-      file-print (word name "," alpha "," eta "," theta "," lambda "," (ifelse-value motivated_cognition [k] [""]) "," (ifelse-value polarity [b] [""]) ","
-      (cum_biasmean / M) "," (cum_sd / M) "," (cum_extremity / M) "," (cum_fragmentation / M / 4))
+      file-print (word name "," alpha "," rho "," theta "," lambda "," (ifelse-value motivated_cognition [k] [""]) "," (ifelse-value polarity [b] [""]) ","
+      (cum_biasmean / B) "," (cum_sd / B) "," (cum_extremity / B) "," (cum_fragmentation / B / 4))
+    ]
+  ]
+  if run? [
+    ifelse record? [
+      vid:start-recorder
+      set visualization "Agents' trajectories"
+      go_tmax tmax true
+      set visualization "Heatmap timeline"
+      draw_trajectories
+      repeat 50 [ display vid:record-interface  ]
+      vid:save-recording (word "vids_netlogo/" name )
+      export-interface (word "vids_netlogo/" name "_interface.png")
+    ] [
+      set skip_ticks_draw 20
+      set visualization "Agents' trajectories"
+      go_tmax round (tmax / skip_ticks_draw) false let temp visualization
+      set visualization "Heatmap timeline"
+      draw_trajectories
+      set visualization temp
     ]
   ]
 end
@@ -239,13 +311,13 @@ to export_all_scenarios
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-481
-210
-1150
-419
+185
+137
+997
+390
 -1
 -1
-3.29
+4.0
 1
 10
 1
@@ -266,10 +338,10 @@ ticks
 30.0
 
 BUTTON
-418
-35
-479
-68
+1062
+13
+1123
+46
 Setup
 setup
 NIL
@@ -283,10 +355,10 @@ NIL
 1
 
 BUTTON
-481
-35
-542
-68
+1124
+13
+1185
+46
 Run!
 set draw? true\ngo
 T
@@ -300,10 +372,10 @@ NIL
 1
 
 SLIDER
-14
-54
-164
-87
+0
+10
+180
+43
 N
 N
 5
@@ -314,31 +386,21 @@ N
 NIL
 HORIZONTAL
 
-TEXTBOX
-17
-159
-85
-177
-Strength
-12
-0.0
-1
-
 CHOOSER
-418
-70
-565
-115
+1112
+410
+1259
+455
 visualization
 visualization
 "Heatmap timeline" "Agents' trajectories"
 1
 
 PLOT
-1149
-287
-1415
-419
+185
+10
+679
+140
 Histogram Attitudes
 Current Attitude
 NIL
@@ -346,17 +408,17 @@ NIL
 2.0
 0.0
 1.0
-true
 false
-"" "set-plot-y-range 0 count turtles / 12.5\nset-plot-x-range 0 - M - 0.05  (M + 0.05) "
+false
+"" "set-plot-y-range 0 count turtles / 10\nset-plot-x-range 0 - B - 0.05  (B + 0.05) "
 PENS
 "default" 0.1818 1 -13345367 true "" "histogram [opinion] of turtles"
 
 SLIDER
-186
-287
-311
-320
+0
+160
+180
+193
 theta
 theta
 0
@@ -368,14 +430,14 @@ NIL
 HORIZONTAL
 
 SLIDER
-828
-70
-985
-103
+1112
+495
+1272
+528
 iterations_per_tick
 iterations_per_tick
 1
-50
+200
 1.0
 1
 1
@@ -383,25 +445,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-987
-70
 1112
-103
+530
+1272
+563
 skip_ticks_draw
 skip_ticks_draw
 1
 20
-10.0
+20.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-12
-535
-190
-568
+0
+230
+180
+263
 lambda
 lambda
 0.01
@@ -412,128 +474,57 @@ lambda
 NIL
 HORIZONTAL
 
-TEXTBOX
-20
-37
-170
-55
-Setup parameters
-12
-0.0
-1
-
 SWITCH
-1424
-74
-1514
-107
-rolling
-rolling
-0
-1
--1000
-
-TEXTBOX
-421
-10
-1016
-33
-Visualization Parameters and Controls
-18
-14.0
-1
-
-TEXTBOX
-419
-136
-1174
-160
-Trajectories of attitudes and output measures, distribution of attitudes
-18
-14.0
-1
-
-TEXTBOX
-12
-12
-289
-32
-Model Parameters
-18
-14.0
-1
-
-TEXTBOX
-847
-106
-960
-124
-Show longer trajectory
-9
-0.0
-1
-
-SWITCH
-713
-47
-825
-80
-focus_one
-focus_one
-1
-1
--1000
-
-TEXTBOX
-988
-105
 1112
-129
-Reduce grapic updates
-9
-0.0
+600
+1224
+633
+focus_one
+focus_one
 1
+1
+-1000
 
 TEXTBOX
-479
-559
-629
-581
+1590
+307
+1740
+329
 Scenarios
 18
 14.0
 1
 
 TEXTBOX
-477
-588
-746
-606
+1548
+336
+1817
+354
 Set parameters for certain examles
 12
 0.0
 1
 
 SLIDER
-828
-36
-972
-69
+1112
+460
+1272
+493
 color_axis_max
 color_axis_max
 0.01
 0.4
-0.15
+0.06
 0.01
 1
 NIL
 HORIZONTAL
 
 BUTTON
-715
-82
-825
-116
+1227
+600
+1337
+634
 Change focus
 change_focus
 NIL
@@ -547,31 +538,31 @@ NIL
 1
 
 MONITOR
-422
-374
-482
-419
-- M
-- M
+997
+343
+1047
+388
+NIL
+- B
 17
 1
 11
 
 TEXTBOX
-423
-304
-481
-332
-neutral=0
+999
+256
+1057
+284
+neutral
 11
 0.0
 1
 
 SLIDER
-80
-150
-209
-183
+0
+90
+180
+123
 alpha
 alpha
 0
@@ -583,28 +574,29 @@ NIL
 HORIZONTAL
 
 PLOT
-195
-498
-362
-618
+678
+10
+838
+140
 change function
-message
+change direction
 NIL
 0.0
 1.0
 0.0
 0.2
-true
 false
-"" "clear-plot\nset-plot-x-range 0 2.5 * lambda\nset-plot-y-range 0 alpha * 2.5 * lambda"
+false
+"" "clear-plot\nset-plot-x-range 0 4 * lambda\nset-plot-y-range 0 alpha * 2.5 * lambda"
 PENS
-"" 1.0 0 -16777216 true "" "foreach ( n-values 100 [ [x] -> x / 100 * 2.5 * lambda ] ) [ [x] -> plotxy x ( opinion_change 0 1 x) ]"
+"" 1.0 0 -16777216 true "" "foreach ( n-values 100 [ [x] -> x / 100 * 4 * lambda ] ) [ [x] -> plotxy x ( opinion_change 0 1 x lambda rho) ]"
+"pen-1" 1.0 0 -7500403 true "" "foreach ( n-values 100 [ [x] -> x / 100 * 4 * lambda ] ) [ [x] -> plotxy x x ]"
 
 SLIDER
-12
-570
-190
-603
+0
+265
+180
+298
 k
 k
 0
@@ -616,10 +608,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-821
-561
-1017
-594
+1351
+165
+1547
+198
 intergroup_credibility
 intergroup_credibility
 0
@@ -631,10 +623,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-821
-525
-1017
-558
+1351
+130
+1547
+163
 initial_groupspread
 initial_groupspread
 0
@@ -646,27 +638,12 @@ NIL
 HORIZONTAL
 
 SLIDER
-1063
-647
-1163
-680
-b
-b
 0
-30
-2.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-187
-332
-311
-365
-M
-M
+45
+180
+78
+B
+B
 0.1
 10
 3.5
@@ -676,10 +653,10 @@ NIL
 HORIZONTAL
 
 SWITCH
-963
-647
-1061
-680
+1351
+95
+1449
+128
 polarity
 polarity
 1
@@ -687,10 +664,10 @@ polarity
 -1000
 
 BUTTON
-281
-725
-391
-758
+1701
+499
+1811
+532
 Update Plots
 every 0.1 [\n  clear-all-plots\n  update-plots\n  ]
 T
@@ -704,10 +681,10 @@ NIL
 1
 
 PLOT
-1171
-619
-1343
-739
+1550
+129
+1710
+249
 polarity factor
 attitude
 NIL
@@ -719,13 +696,13 @@ true
 false
 "" "clear-plot"
 PENS
-"default" 1.0 0 -16777216 true "" "foreach ( n-values 200 [ [x] -> (x - 100) / 100 * 1.5 * M ] ) [ [x] -> plotxy x ( compute_polarity x) ]"
+"default" 1.0 0 -16777216 true "" "foreach ( n-values 200 [ [x] -> (x - 100) / 100 * 1.5 * B ] ) [ [x] -> plotxy x ( compute_polarity x) ]"
 
 BUTTON
-571
-81
-700
-114
+1710
+462
+1815
+495
 Redraw World
 draw_trajectories
 NIL
@@ -739,10 +716,10 @@ NIL
 1
 
 BUTTON
-691
-637
-832
-670
+1556
+499
+1697
+532
 Run until world full
 run_until_world_full
 NIL
@@ -755,44 +732,34 @@ NIL
 NIL
 1
 
-TEXTBOX
-128
-728
-278
-758
-Click to play with parameters before run:
-12
-0.0
-1
-
 CHOOSER
-13
-276
-184
-321
+1351
+10
+1522
+55
 theta_as
 theta_as
 "idiosyncrasy probability" "back to inital probability" "weight on initial attitude"
 0
 
 MONITOR
-421
-210
-481
-255
-M
-M
+998
+142
+1048
+187
+NIL
+B
 17
 1
 11
 
 SLIDER
-87
-221
-212
-254
-eta
-eta
+0
+125
+180
+158
+rho
+rho
 0
 1
 0.0
@@ -801,31 +768,11 @@ eta
 NIL
 HORIZONTAL
 
-TEXTBOX
-220
-234
-305
-267
-information integration
-12
-0.0
-1
-
-TEXTBOX
-18
-232
-84
-262
-affective contagion
-12
-0.0
-1
-
 BUTTON
-485
-606
-548
-639
+1556
+355
+1619
+388
 1-A
 scenario \"1-A\"
 NIL
@@ -839,10 +786,10 @@ NIL
 1
 
 BUTTON
-552
-606
-615
-639
+1623
+355
+1686
+388
 1-B
 scenario \"1-B\"
 NIL
@@ -856,10 +803,10 @@ NIL
 1
 
 BUTTON
-618
-606
-681
-639
+1689
+355
+1752
+388
 1-C
 scenario \"1-C\"
 NIL
@@ -873,10 +820,10 @@ NIL
 1
 
 BUTTON
-552
-642
-615
-675
+1623
+390
+1686
+423
 2-B
 scenario \"2-B\"
 NIL
@@ -890,10 +837,10 @@ NIL
 1
 
 BUTTON
-484
-678
-547
-711
+1555
+426
+1618
+459
 3-A
 scenario \"3-A\"
 NIL
@@ -907,10 +854,10 @@ NIL
 1
 
 BUTTON
-484
-642
-547
-675
+1555
+390
+1618
+423
 2-A
 scenario \"2-A\"
 NIL
@@ -924,10 +871,10 @@ NIL
 1
 
 BUTTON
-618
-641
-681
-674
+1689
+390
+1752
+423
 2-C
 scenario \"2-C\"
 NIL
@@ -941,10 +888,10 @@ NIL
 1
 
 BUTTON
-552
-678
-615
-711
+1623
+426
+1686
+459
 3-B
 scenario \"3-B\"
 NIL
@@ -958,10 +905,10 @@ NIL
 1
 
 BUTTON
-618
-677
-681
-710
+1689
+425
+1752
+458
 3-C
 scenario \"3-C\"
 NIL
@@ -974,41 +921,11 @@ NIL
 NIL
 1
 
-TEXTBOX
-827
-503
-977
-521
-2. Source credibility
-12
-0.0
-1
-
-TEXTBOX
-961
-624
-1111
-642
-4. Polarity
-12
-0.0
-1
-
-TEXTBOX
-15
-475
-165
-493
-5. Motivated cognition
-12
-0.0
-1
-
 PLOT
-1149
-166
-1415
-288
+185
+387
+612
+614
 Output measures
 NIL
 NIL
@@ -1018,97 +935,87 @@ NIL
 1.0
 false
 true
-"" "ifelse rolling [\n  ifelse ticks > (max-pxcor)\n    [set-plot-x-range (ticks - max-pxcor) ticks]\n    [set-plot-x-range 0 max-pxcor]\n  ] [\n  ifelse ticks > (max-pxcor)\n    [set-plot-x-range 0 ticks]\n    [set-plot-x-range 0 max-pxcor]\n  ]"
+"" "ifelse ticks > (max-pxcor)\n  [set-plot-x-range (ticks - max-pxcor) ticks]\n  [set-plot-x-range 0 max-pxcor]"
 PENS
-"bias" 1.0 0 -2674135 true "" "plot abs mean [opinion] of turtles / M"
-"diversity" 1.0 0 -16777216 true "" "plot standard-deviation [opinion] of turtles / M"
-"fragmentation" 1.0 0 -13791810 true "" "plot fragmentation / M / 4"
-"extremity" 1.0 0 -5825686 true "" "plot extremity / M"
-"initial diversity" 1.0 0 -7500403 true "" "plot 1 / M"
+"bias" 1.0 0 -2674135 true "" "plot abs mean [opinion] of turtles / B"
+"diversity" 1.0 0 -16777216 true "" "plot standard-deviation [opinion] of turtles / B"
+"fragmentation" 1.0 0 -13791810 true "" "plot fragmentation / B / 4"
+"polarized threshold" 1.0 0 -4539718 true "" "plot 1 / sqrt 3"
+"initial diversity" 1.0 0 -7500403 true "" "plot 1 / B"
 
 SLIDER
-1116
-59
-1236
-92
+1112
+565
+1272
+598
 spinup_tick
 spinup_tick
 1
 200
-50.0
+51.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-996
-166
-1056
-211
-diversity
-cum_sd / M
-3
-1
-11
-
-MONITOR
-1054
-166
-1149
-211
-fragmentation
-cum_fragmentation / M / 4
-3
-1
-11
-
-MONITOR
-940
-166
 997
-211
+527
+1099
+572
+diversity
+cum_sd / B
+3
+1
+11
+
+MONITOR
+997
+569
+1099
+614
+fragmentation
+cum_fragmentation / B / 4
+3
+1
+11
+
+MONITOR
+997
+483
+1099
+528
 bias
-cum_biasmean / M
+cum_biasmean / B
 3
 1
 11
 
 TEXTBOX
-810
-193
-867
-211
-time ->
-11
-0.0
-1
-
-TEXTBOX
-424
-263
-475
-305
+1001
+195
+1061
+238
 positive attitudes
 11
 0.0
 1
 
 TEXTBOX
-424
-335
-475
-363
+1000
+304
+1057
+333
 negative attitudes
 11
 0.0
 1
 
 MONITOR
-500
-165
-550
-210
+1550
+249
+1600
+294
 NIL
 alpha
 17
@@ -1116,52 +1023,32 @@ alpha
 11
 
 MONITOR
-549
-165
-599
-210
+1599
+249
+1649
+294
 NIL
-eta
+rho
 17
 1
 11
 
 MONITOR
-598
-165
-648
-210
+1648
+249
+1698
+294
 NIL
 theta
 17
 1
 11
 
-TEXTBOX
-424
-173
-514
-209
-Input parameters
-12
-0.0
-1
-
-TEXTBOX
-875
-174
-941
-202
-Output measures
-12
-0.0
-1
-
 MONITOR
-646
-165
-701
-210
+1696
+249
+1751
+294
 lambda
 ifelse-value motivated_cognition [lambda] [\"\"]
 2
@@ -1169,32 +1056,21 @@ ifelse-value motivated_cognition [lambda] [\"\"]
 11
 
 MONITOR
-699
-165
-756
-210
+1749
+249
+1806
+294
 k
 ifelse-value motivated_cognition [k] [\"\"]
 1
 1
 11
 
-MONITOR
-746
-165
-796
-210
-b
-ifelse-value polarity [b] [\"\"]
-1
-1
-11
-
 SWITCH
-691
-674
-867
-707
+1556
+535
+1732
+568
 run_and_export_figs
 run_and_export_figs
 1
@@ -1202,31 +1078,21 @@ run_and_export_figs
 -1000
 
 SWITCH
-12
-499
-190
-532
+0
+195
+178
+228
 motivated_cognition
 motivated_cognition
 0
 1
 -1000
 
-TEXTBOX
-1124
-94
-1233
-118
-Tick to start cumulative measures
-9
-0.0
-1
-
 BUTTON
-682
-741
-860
-774
+1555
+462
+1705
+495
 NIL
 export_all_scenarios
 NIL
@@ -1239,14 +1105,295 @@ NIL
 NIL
 1
 
+PLOT
+612
+386
+997
+614
+Aggregate Attitude
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+false
+true
+"" "set-plot-y-range (- B) (B)\nifelse ticks > (max-pxcor)\n  [set-plot-x-range (ticks - max-pxcor) ticks]\n  [set-plot-x-range 0 max-pxcor]"
+PENS
+"mean" 1.0 0 -10899396 true "" "plot mean [opinion] of turtles"
+"median" 1.0 0 -2674135 true "" "plot median [opinion] of turtles"
+"neutral" 1.0 0 -4539718 true "" "plot 0"
+
+SLIDER
+0
+300
+180
+333
+lambda_dispersion
+lambda_dispersion
+0
+0.6
+0.0
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1351
+59
+1523
+92
+rho_dispersion
+rho_dispersion
+0
+1
+0.0
+0.01
+1
+NIL
+HORIZONTAL
+
+PLOT
+837
+10
+997
+142
+lambda_i
+NIL
+NIL
+0.0
+2.5
+0.0
+10.0
+true
+false
+"" "set-plot-y-range 0 round(count turtles / 8)"
+PENS
+"default" 0.1 1 -16777216 true "" "histogram [lambda_i] of turtles"
+
+PLOT
+1550
+10
+1710
+130
+rho_i
+NIL
+NIL
+0.0
+1.05
+0.0
+10.0
+true
+false
+"" "set-plot-y-range 0 round(count turtles / 8)"
+PENS
+"default" 0.05 1 -16777216 true "" "histogram [rho_i] of turtles"
+
 TEXTBOX
-17
-200
-167
-218
-Degree of integration
+209
+405
+274
+423
+Polarized
 12
 0.0
+1
+
+TEXTBOX
+209
+486
+274
+504
+Diversified
+12
+0.0
+1
+
+TEXTBOX
+210
+542
+285
+560
+Condensed
+12
+0.0
+1
+
+BUTTON
+1064
+89
+1166
+122
+Contagion
+scenario \"Contagion\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+1063
+49
+1166
+82
+run?
+run?
+0
+1
+-1000
+
+SWITCH
+1169
+49
+1276
+82
+record?
+record?
+1
+1
+-1000
+
+BUTTON
+1064
+125
+1225
+158
+ContagionIdiosyncrasy
+scenario \"ContagionIdiosyncrasy\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+162
+1181
+195
+Assimilation
+scenario \"Assimilation\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+197
+1230
+230
+AssimilationContagion
+scenario \"AssimilationContagion\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+232
+1231
+265
+MotCognitionContagion
+scenario \"MotCognitionContagion\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+267
+1238
+300
+MotCognitionAssimilation
+scenario \"MotCognitionAssimilation\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+302
+1276
+335
+MotCognitionSharpAssimilation
+scenario \"MotCognitionSharpAssimilation\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+337
+1315
+370
+MotCognitionSharpAssimilationNoIdio
+scenario \"MotCognitionSharpAssimilationNoIdio\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1064
+372
+1273
+405
+HeterogeneousLatitudesSharp
+scenario \"HeterogeneousLatitudesSharp\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
 1
 
 @#$#@#$#@
@@ -1809,12 +1956,12 @@ NetLogo 6.0.4
     <enumeratedValueSet variable="alpha">
       <value value="0.2"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="p">
+    <enumeratedValueSet variable="theta">
       <value value="0"/>
       <value value="0.01"/>
       <value value="0.1"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="delta">
+    <enumeratedValueSet variable="rho">
       <value value="1"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="polarity">
@@ -1823,10 +1970,7 @@ NetLogo 6.0.4
     <enumeratedValueSet variable="focus_one">
       <value value="true"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="b">
-      <value value="2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="M">
+    <enumeratedValueSet variable="B">
       <value value="3.5"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="p_as">
